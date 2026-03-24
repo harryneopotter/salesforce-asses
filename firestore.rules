@@ -1,0 +1,58 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: assessments
+    // Document ID: auto-generated
+    // Fields:
+    //   - timestamp: string (ISO 8601 date string)
+    //   - history: list of objects (question, answer, reasoning, score, etc.)
+    //   - finalReport: object (seniority, curriculumPath, strengths, weaknesses, nextSteps, skillMap)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (request.auth.token.email == "self.sachin@gmail.com" && request.auth.token.email_verified == true);
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string &&
+        dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function isValidAssessmentResult(data) {
+      return data.keys().hasAll(['timestamp', 'history', 'finalReport']) &&
+             isValidDateString(data.timestamp) &&
+             data.history is list && data.history.size() <= 100 &&
+             data.finalReport is map &&
+             data.finalReport.keys().hasAll(['seniority', 'curriculumPath', 'strengths', 'weaknesses', 'nextSteps', 'skillMap']);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /assessments/{assessmentId} {
+      // Allow anyone to submit an assessment (since test takers are not logged in)
+      // but strictly validate the payload to prevent abuse.
+      allow create: if isValidAssessmentResult(request.resource.data);
+      
+      // Only admins can read or manage assessments
+      allow read, update, delete: if isAdmin();
+    }
+  }
+}

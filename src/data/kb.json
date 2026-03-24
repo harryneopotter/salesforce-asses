@@ -1,0 +1,814 @@
+{
+  "topics": [
+    {
+      "name": "SFRA Internals",
+      "core_concepts": [
+        "SFRA is a modular reference storefront built around the appstorefrontbase cartridge and server module.",
+        "It implements a controller-driven MVC variant where controllers build view models consumed by ISML templates.",
+        "Cartridge overlays (base, plugin, LINK, custom) enable layered customization via the cartridge path.",
+        "Business logic is centralized in controllers and models rather than templates, improving testability and maintainability."
+      ],
+      "seniorexplanation": "SFRA replaces SiteGenesis with a modular, controller-centric architecture that separates concerns across cartridges, controllers, models, and ISML views. Core commerce flows live in appstorefront_base, while plugins and LINK cartridges add optional or third-party capabilities that can be overlaid by project-specific cartridges. Controllers orchestrate script APIs, build view models, and delegate rendering to views, which keeps templates thin and easier to evolve. The overlay model and hook system allow teams to extend behavior without cloning templates or modifying base cartridges, which is critical for upgradeability and multi-team collaboration.",
+      "architecture_patterns": [
+        "Base-plus-overlay: keep appstorefrontbase pristine and implement custom behavior in separate overlay cartridges.",
+        "Use plugin cartridges for optional features (for example, wishlists, in-store pickup) that can be enabled per site.",
+        "Adopt a strict MVC pattern where controllers build view models and ISML templates remain logic-light."
+      ],
+      "integration_patterns": [
+        "Use LINK cartridges to integrate certified payment, tax, and shipping providers into SFRA flows.",
+        "Expose SFRA server-side data via OCAPI or SCAPI for headless or external channel consumption.",
+        "Implement hook-based adapters in integration cartridges to plug into checkout and customer lifecycle events."
+      ],
+      "performance_considerations": [
+        "Minimize logic in ISML templates and keep heavy computation in controllers or back-end services.",
+        "Design controllers to be cache-friendly and align with CDN and application caching strategies.",
+        "Avoid overly deep cartridge paths that increase script resolution overhead and complicate overrides."
+      ],
+      "security_considerations": [
+        "Use SFRA middleware to enforce HTTPS and authentication on sensitive routes.",
+        "Ensure all user-supplied data rendered in ISML is encoded to prevent XSS.",
+        "Avoid exposing internal identifiers without authorization checks in SFRA flows."
+      ],
+      "common_pitfalls": [
+        "Modifying appstorefrontbase directly instead of extending via overlay cartridges, blocking clean upgrades.",
+        "Embedding heavy business logic in ISML templates, reducing testability and maintainability.",
+        "Breaking hook contracts when customizing plugin or LINK cartridges, causing fragile integrations."
+      ],
+      "realworldexamples": [
+        "Global fashion brand replatforming from SiteGenesis to SFRA using a base cartridge plus regional overlays.",
+        "Payment provider delivering an SFRA-compatible LINK cartridge that plugs into checkout hooks.",
+        "Retailer improving mobile UX by leveraging SFRA’s responsive templates and controller patterns."
+      ],
+      "interview_questions": [
+        {
+          "question": "Explain how cartridge overlays and hooks should be used to customize SFRA without modifying appstorefrontbase.",
+          "difficulty": "mid"
+        },
+        {
+          "question": "How does SFRA’s MVC pattern differ from SiteGenesis, and why does that matter for large teams?",
+          "difficulty": "mid"
+        },
+        {
+          "question": "Design an SFRA customization strategy that remains upgrade-safe across multiple releases.",
+          "difficulty": "senior"
+        }
+      ]
+    },
+    {
+      "name": "Cartridge Architecture & Resolution",
+      "core_concepts": [
+        "Cartridges are deployment units that package code and data for storefronts and integrations.",
+        "Cartridge path order determines which implementation wins when multiple cartridges define the same resource.",
+        "Types include base, plugin, LINK, and custom cartridges, often combined into stacks per site.",
+        "Resolution applies to scripts, templates, static assets, and configuration resources."
+      ],
+      "senior_explanation": "Cartridges define the modular deployment and override model for SFCC. Each site’s behavior emerges from the ordered cartridge path that the runtime traverses when resolving scripts, templates, and metadata. Base cartridges provide core features, plugin and LINK cartridges add optional or third-party capabilities, and custom cartridges provide project-specific overlays layered above them. Because precedence is purely positional, architects must design consistent stacks across environments and sites, keeping shared cartridges low and site-specific overrides at the top. Poor cartridge design leads to brittle overrides, upgrade pain, and hidden coupling between teams.",
+      "architecture_patterns": [
+        "Core–shared–site layering: platform and SFRA cartridges at the bottom, shared business cartridges in the middle, site-specific cartridges at the top.",
+        "Dedicated integration cartridges for each external system (payment, tax, OMS) to isolate vendor-specific logic.",
+        "Read-only base and plugin cartridges with all customizations in overlay cartridges owned by the implementation team."
+      ],
+      "integration_patterns": [
+        "Ship third-party integrations as LINK cartridges that plug into hooks and jobs without editing base code.",
+        "Use organization-level cartridges for cross-site concerns such as SSO, logging, and monitoring.",
+        "Align OCAPI and SCAPI customizations with dedicated integration cartridges to keep storefront cartridges focused on UX."
+      ],
+      "performance_considerations": [
+        "Keep the cartridge path as short and flat as feasible to reduce lookup overhead.",
+        "Avoid duplicating assets and templates across cartridges to limit deployment size and cache churn.",
+        "Centralize expensive utilities in shared cartridges to reuse caching and avoid repeated implementations."
+      ],
+      "security_considerations": [
+        "Centralize security-sensitive code (auth helpers, header policies) in vetted shared cartridges.",
+        "Restrict access to cartridges that contain secrets or integration credentials.",
+        "Validate LINK and partner cartridges for security compliance before adding them to the stack."
+      ],
+      "common_pitfalls": [
+        "Inconsistent cartridge ordering between environments causing non-reproducible bugs.",
+        "Editing vendor or base cartridges, making upgrades and security patches difficult.",
+        "Site-specific cartridges leaking behavior into other sites due to shared mappings."
+      ],
+      "realworldexamples": [
+        "Multi-brand retailer running shared SFRA and Page Designer cartridges with brand-specific cartridges per site.",
+        "Payment provider delivering separate LINK cartridges for core services and SFRA storefront integration.",
+        "Global implementation where OMS, tax, and search each have their own integration cartridges at the organization level."
+      ],
+      "interview_questions": [
+        {
+          "question": "Describe how cartridge resolution works when two cartridges define the same controller and template.",
+          "difficulty": "mid"
+        },
+        {
+          "question": "How would you structure cartridges for a multi-brand, multi-site rollout sharing 80% of code?",
+          "difficulty": "senior"
+        },
+        {
+          "question": "What risks arise from changing cartridge order between staging and production?",
+          "difficulty": "mid"
+        }
+      ]
+    },
+    {
+      "name": "Multi-site & Multi-locale Architecture",
+      "core_concepts": [
+        "B2C Commerce organizations can host multiple sites representing brands, regions, or channels.",
+        "Locales and currencies are configured at organization and site levels in Business Manager.",
+        "Sites can share cartridges, catalogs, content libraries, and Page Designer libraries, or use separate ones.",
+        "Locale fallback and shared data strategies determine behavior when content is missing in a locale."
+      ],
+      "senior_explanation": "Multi-site architecture lets organizations model brands, regions, or channels as separate sites while sharing core code, catalogs, or content where appropriate. Locale configuration spans organization and site levels, affecting currencies, date formats, URLs, and localized product and content data. Architects must decide which assets are global versus site-specific and design cartridge mappings, catalogs, and libraries accordingly to avoid drift and duplication. In headless scenarios, PWA Kit and composable storefronts map Business Manager sites and locales to domains and URL structures, enabling multi-site experiences from a single codebase.",
+      "architecture_patterns": [
+        "One org, many sites: each brand or region as a separate site sharing core cartridges and sometimes catalogs.",
+        "Shared content and Page Designer libraries across sites with local overrides where needed.",
+        "Locale fallback strategies to reuse content when fully localized assets are unavailable."
+      ],
+      "integration_patterns": [
+        "ERP or pricing services feeding different price books per site and currency.",
+        "PIM driving localized attributes and media per locale while sharing global identifiers.",
+        "Single OMS handling orders across multiple sites with unified customer profiles."
+      ],
+      "performance_considerations": [
+        "Reuse shared cartridges and libraries to benefit from common caches and avoid redundant deployments.",
+        "Design URL and alias schemes that allow effective CDN caching across locales and domains.",
+        "Keep locale catalogs lean and avoid over-localized variants that complicate cache keys."
+      ],
+      "security_considerations": [
+        "Apply consistent security settings (HTTPS, headers, roles) across all sites in an org.",
+        "Ensure access control and permissions reflect business and regulatory differences per region.",
+        "Use separate API clients or scopes per site when necessary to isolate integrations."
+      ],
+      "common_pitfalls": [
+        "Inconsistent locale and currency configuration between sites, leading to broken experiences.",
+        "Duplicating catalogs and content per site instead of using shared structures with overrides.",
+        "Complex routing rules in headless setups that do not align cleanly with Business Manager site mappings."
+      ],
+      "realworldexamples": [
+        "Brand managing separate EU, UK, and US sites with shared SFRA and Page Designer components but different locales and currencies.",
+        "PWA-based storefront serving multiple B2C sites from one codebase mapped via aliases and domains.",
+        "Global retailer using locale fallback to gracefully handle partially localized content."
+      ],
+      "interview_questions": [
+        {
+          "question": "How would you design catalogs, cartridges, and libraries for a multi-brand, multi-region implementation?",
+          "difficulty": "senior"
+        },
+        {
+          "question": "What are the trade-offs between separate sites per country versus shared sites with locale-based behavior?",
+          "difficulty": "senior"
+        },
+        {
+          "question": "When should you use separate sites versus locale-based content variations?",
+          "difficulty": "senior"
+        }
+      ]
+    },
+    {
+      "name": "Page Designer Architecture",
+      "core_concepts": [
+        "Page Designer lets merchandisers build pages visually using reusable page and component types defined by developers.",
+        "Developers create page/component metadata and rendering scripts in dedicated Page Designer cartridges.",
+        "Components are designed to be self-contained, with their own styling and configurable attributes.",
+        "Page and component instances are stored as data, enabling reuse across locales, devices, and segments."
+      ],
+      "senior_explanation": "Page Designer separates page composition from code by letting developers define typed building blocks while merchandisers assemble localized, scheduled experiences through Business Manager. Developers contribute cartridges that contain meta definitions, rendering logic, and supporting assets, while the platform persists page and component instances as content data that can be reused across pages and sites. Components are expected to be self-contained, with robust defaults and careful versioning to avoid breaking existing content when definitions evolve. A sandboxed attribute-editor framework using iframes and a message channel allows safe customization of the Page Designer UI without risking cross-component interference.",
+      "architecture_patterns": [
+        "Dedicated experience cartridges: one for meta definitions and scripts, another for UI assets and helpers.",
+        "Shared libraries of page/component types used across multiple sites mapped to common cartridges.",
+        "Black-box component design where each component manages its own styling and dependencies."
+      ],
+      "integration_patterns": [
+        "Using Page Designer components to surface CMS content, including Salesforce CMS, on storefront pages.",
+        "Implementing components that integrate with recommendation engines, search, or personalization services.",
+        "Embedding analytics and A/B testing hooks inside components for experience optimization."
+      ],
+      "performance_considerations": [
+        "Design components to be cache-friendly and avoid heavy server logic during render.",
+        "Minimize client-side JS and third-party tags loaded per component to prevent page bloat.",
+        "Reuse layouts and assets across pages to maximize CDN effectiveness."
+      ],
+      "security_considerations": [
+        "Ensure attribute editors validate and encode input to prevent XSS in rendered pages.",
+        "Avoid exposing sensitive data through component attributes or Page Designer metadata.",
+        "Treat custom editor iframes as untrusted and constrain communication to well-defined messages."
+      ],
+      "common_pitfalls": [
+        "Changing component meta definitions incompatibly after content is created, breaking existing instances.",
+        "Allowing sites that share libraries to drift in cartridge mappings, causing validation errors.",
+        "Overusing Page Designer for transactional flows (for example, checkout) instead of content-centric experiences."
+      ],
+      "realworldexamples": [
+        "Merchandisers building campaign landing pages with localized hero and grid components without developer changes.",
+        "Shared Page Designer component library driving consistent branding across multiple regional sites.",
+        "CMS content from Salesforce CMS rendered through dedicated Page Designer components."
+      ],
+      "interview_questions": [
+        {
+          "question": "How would you design Page Designer components so multiple sites can share them safely?",
+          "difficulty": "senior"
+        },
+        {
+          "question": "What are the risks of changing Page Designer meta definitions after pages are live?",
+          "difficulty": "mid"
+        },
+        {
+          "question": "When is Page Designer an appropriate solution versus content slots or SFRA templates?",
+          "difficulty": "mid"
+        }
+      ]
+    },
+    {
+      "name": "OCAPI Data API",
+      "core_concepts": [
+        "OCAPI Data API manages merchant resources such as catalogs, coupons, customer lists, jobs, and content.",
+        "Access is via HTTP with JSON or XML payloads and versioned resource URLs.",
+        "It is primarily used for back-office and integration use cases, not high-volume shopper traffic.",
+        "Authorization uses OAuth 2.0 with client permissions configured per instance and per site."
+      ],
+      "senior_explanation": "The OCAPI Data API is SFCC’s administrative surface for programmatic management of business objects, designed for controlled back-office integrations rather than real-time shopper flows. Architects configure OCAPI settings to define which clients can access which resources at global or site scope, combining OAuth 2.0, client scopes, and per-resource configuration. Data API capabilities such as queries, property selection, and batch requests allow efficient synchronization of catalogs, prices, content, and customer data with external PIM, CRM, or ERP systems. While SCAPI Admin is preferred for new work, OCAPI Data remains critical where features are not yet covered or where existing integrations are stable and heavily customized.",
+      "architecture_patterns": [
+        "Use OCAPI Data for scheduled or event-driven integrations that modify catalogs, prices, and customer data.",
+        "Centralize OCAPI configuration in source control as JSON and deploy via jobs or CI to keep environments aligned.",
+        "Limit Data API access to secure network locations (middleware, MDM, ERP) rather than browsers."
+      ],
+      "integration_patterns": [
+        "PIM to SFCC: push catalog structures, attributes, and digital assets via Data API.",
+        "ERP to SFCC: sync price books, tax tables, and inventory snapshots using authorized Data clients.",
+        "Order export from SFCC to OMS/ERP using jobs plus Data API reads where applicable."
+      ],
+      "performance_considerations": [
+        "Use batch requests to reduce HTTP overhead when performing many small related operations.",
+        "Restrict properties returned using selectors and queries to minimize payload size.",
+        "Align Data API operations with jobs and off-peak windows to reduce impact on storefront traffic."
+      ],
+      "security_considerations": [
+        "Harden OCAPI client permissions by granting minimum required access per resource and site.",
+        "Rotate client secrets regularly and restrict where clients can be used.",
+        "Configure CORS and caching cautiously to prevent data exposure through misconfigured proxies."
+      ],
+      "common_pitfalls": [
+        "Using highly permissive OCAPI client configurations that expose admin operations to unintended consumers.",
+        "Treating Data API as a real-time channel for shopper interactions, creating latency and scalability issues.",
+        "Forgetting to synchronize OCAPI settings between environments, causing unexpected 403 errors or behavior differences."
+      ],
+      "realworldexamples": [
+        "PIM system exporting nightly catalog updates into SFCC using OCAPI Data and scheduled jobs.",
+        "ERP pushing updated price books and promotion data to B2C Commerce via secured Data API clients.",
+        "CDP enriching customer profiles in B2C Commerce for targeted marketing lists."
+      ],
+      "interview_questions": [
+        {
+          "question": "When would you choose OCAPI Data over SCAPI Admin for an integration?",
+          "difficulty": "senior"
+        },
+        {
+          "question": "How do OCAPI settings JSON and client permissions work together to secure Data API access?",
+          "difficulty": "mid"
+        },
+        {
+          "question": "What techniques can you use to reduce the performance impact of bulk imports via OCAPI Data?",
+          "difficulty": "mid"
+        }
+      ]
+    },
+    {
+      "name": "OCAPI Shop API",
+      "core_concepts": [
+        "OCAPI Shop API exposes shopper-facing resources such as products, baskets, and orders over HTTP.",
+        "It is designed as a stateless API secured via OAuth and JSON Web Tokens for session handling.",
+        "It is commonly used for custom storefronts, mobile apps, or client-side integrations predating SCAPI.",
+        "Salesforce recommends SCAPI for most new projects, but OCAPI Shop remains widely used."
+      ],
+      "senior_explanation": "The OCAPI Shop API is the legacy but still-supported shopper-facing API that underpins many existing custom storefronts and mobile experiences on B2C Commerce. It provides REST-like endpoints for catalog browsing, pricing, baskets, and orders, using bearer tokens and JWTs for stateless authentication. Shop API behavior is shaped by OCAPI settings, which control client permissions, personalization, localization, and caching characteristics. While SCAPI is now the preferred API for new shopper experiences, senior engineers must understand Shop API to maintain or gradually migrate existing sites without disrupting revenue.",
+      "architecture_patterns": [
+        "Single-page applications consuming Shop API directly with a lightweight storefront running outside SFCC.",
+        "Hybrid SFRA plus Shop API patterns where certain flows (for example, mobile app) use Shop API while web uses server-rendered SFRA.",
+        "Use of proxy or BFF layers in front of Shop API to normalize data and implement cross-cutting concerns."
+      ],
+      "integration_patterns": [
+        "Mobile apps consuming Shop API for catalog and basket operations.",
+        "In-store kiosks integrating with Shop API for real-time product data and availability.",
+        "Custom CS tools using Shop API in combination with Data API for unified customer views."
+      ],
+      "performance_considerations": [
+        "Use client-side and proxy caching where safe; align with OCAPI caching guidelines and headers.",
+        "Avoid excessive expansion of linked resources in a single Shop request to keep latency low.",
+        "Batch client-side operations where possible instead of many small sequential calls."
+      ],
+      "security_considerations": [
+        "Configure least-privilege OCAPI Shop client permissions and avoid exposing admin capabilities.",
+        "Enforce HTTPS, secure cookies, and strict token handling when using Shop API from browsers.",
+        "Carefully configure CORS when exposing Shop API directly to JS applications."
+      ],
+      "common_pitfalls": [
+        "Leaking sensitive data (for example, stock levels) by misconfiguring Shop API resource settings.",
+        "Using Shop API heavily for back-office operations that are better served by Data or SCAPI Admin APIs.",
+        "Locking into Shop API data shapes in new builds instead of adopting SCAPI early."
+      ],
+      "realworldexamples": [
+        "Legacy mobile storefront using OCAPI Shop for all shopper operations.",
+        "Customer Service Center integration that updates payment methods through Shop API and PSP hooks.",
+        "Retailer progressively migrating checkout flows from Shop API to SCAPI Shopper APIs."
+      ],
+      "interview_questions": [
+        {
+          "question": "Compare OCAPI Shop and SCAPI Shopper APIs in terms of capabilities and recommended usage.",
+          "difficulty": "mid"
+        },
+        {
+          "question": "How do OCAPI settings influence security and caching for Shop API clients?",
+          "difficulty": "senior"
+        },
+        {
+          "question": "What migration strategies would you use to move an existing Shop-based head to SCAPI?",
+          "difficulty": "senior"
+        }
+      ]
+    },
+    {
+      "name": "SCAPI",
+      "core_concepts": [
+        "SCAPI is the modern RESTful API stack for shopper and admin use cases in B2C Commerce.",
+        "Shopper APIs are secured via SLAS with OAuth2 and JWTs, while Admin APIs use Account Manager clients.",
+        "SCAPI is designed for high-scale usage with headless and composable storefronts, including PWA Kit.",
+        "Salesforce recommends SCAPI for new projects and major refactors instead of OCAPI."
+      ],
+      "senior_explanation": "SCAPI is the strategic API surface for B2C Commerce, separating high-scale Shopper APIs from Admin APIs and aligning authorization with SLAS and Account Manager respectively. Shopper APIs handle browsing, basket, and checkout scenarios with JWT-based authentication and are optimized for PWAs, native apps, and custom storefronts. Admin APIs cover product, price, inventory, and customer management for trusted back-office clients, using scoped API clients to enforce least privilege. SCAPI adds performance-oriented features like controlled resource expansion, caching guidance, and size limits while coexisting with OCAPI for features not yet ported, making coexistence and phased migration key responsibilities for senior engineers.",
+      "architecture_patterns": [
+        "Headless architectures where PWA Kit or custom frontends consume SCAPI Shopper APIs and call Admin APIs via secure services.",
+        "BFF services mediating between UI clients and SCAPI to centralize logic and security.",
+        "Coexistence layer where legacy OCAPI integrations are maintained while new capabilities use SCAPI."
+      ],
+      "integration_patterns": [
+        "PWA Kit storefront using Shopper APIs for catalog, basket, and checkout.",
+        "Custom merchant tools or admin portals built on SCAPI Admin APIs for catalog and order management.",
+        "3rd-party systems (OMS, ERP, CDP) integrating via SCAPI Admin instead of Data API where feature coverage exists."
+      ],
+      "performance_considerations": [
+        "Use expand parameters carefully because expanded resources affect cache hit rates and payload sizes.",
+        "Leverage Commerce SDK caching to reduce repeated SCAPI calls.",
+        "Observe documented SCAPI limits on request and response sizes and tune clients accordingly."
+      ],
+      "security_considerations": [
+        "Ensure SLAS flows and Account Manager clients are configured with minimal scopes and strong secrets.",
+        "Respect rate limits and design clients to handle throttling gracefully.",
+        "Secure custom heads and BFFs following general web security best practices."
+      ],
+      "common_pitfalls": [
+        "Treating SCAPI responses as fully cacheable without considering personalization and auth context.",
+        "Mixing Admin API calls directly into browser clients instead of server-side services.",
+        "Overusing expand parameters leading to high latency and cache misses."
+      ],
+      "realworldexamples": [
+        "Composable storefront architectures built with PWA Kit and SCAPI for multi-site commerce.",
+        "Retailers replacing OCAPI-based mobile apps with SCAPI-backed experiences to improve performance.",
+        "Headless integrations where SCAPI Admin feeds product and inventory data into external systems."
+      ],
+      "interview_questions": [
+        {
+          "question": "Explain the security and usage differences between SCAPI Shopper APIs and SCAPI Admin APIs.",
+          "difficulty": "mid"
+        },
+        {
+          "question": "How would you design a migration plan from an OCAPI-based storefront to SCAPI and PWA Kit?",
+          "difficulty": "senior"
+        },
+        {
+          "question": "What are the implications of SCAPI’s expand parameter on caching and scalability?",
+          "difficulty": "senior"
+        }
+      ]
+    },
+    {
+      "name": "Checkout Architecture",
+      "core_concepts": [
+        "Checkout orchestrates basket validation, shipping, tax, payment authorization, and order creation.",
+        "SFRA checkout is implemented via controllers, forms, and hooks that allow customization.",
+        "Payment, tax, and shipping providers are typically integrated via LINK or custom cartridges.",
+        "Checkout must balance UX, performance, security, and regulatory requirements."
+      ],
+      "senior_explanation": "Checkout architecture in SFCC coordinates multiple subsystems: basket validation, shipping calculation, tax estimation, payment authorization, fraud checks, and final order creation. SFRA provides a reference implementation with controllers and forms that can be extended via hooks and overlays, while integrations to PSPs, tax engines, and shipping providers are typically encapsulated in LINK or custom cartridges. Senior engineers must design checkout flows that are resilient to partial failures, support multiple payment methods and regional rules, and remain upgrade-safe. They also need to consider performance, PCI scope, and security controls such as HTTPS, tokenization, and fraud detection.",
+      "architecture_patterns": [
+        "Modular checkout steps (shipping, billing, review) implemented as separate controllers with shared services.",
+        "Hook-driven customization for payment, tax, and shipping to avoid hard-coding providers.",
+        "Use of a dedicated service layer for payment and tax logic instead of embedding it in controllers."
+      ],
+      "integration_patterns": [
+        "LINK cartridges for PSPs that plug into SFRA payment hooks.",
+        "Tax engine integrations that calculate tax during basket and order flows.",
+        "Fraud service integrations that score orders before final confirmation."
+      ],
+      "performance_considerations": [
+        "Minimize synchronous calls to external systems during checkout; use caching where safe.",
+        "Optimize form validation and client-side behavior to reduce round trips.",
+        "Monitor checkout step latency and abandonment to identify bottlenecks."
+      ],
+      "security_considerations": [
+        "Enforce HTTPS and secure cookies on all checkout pages.",
+        "Avoid handling raw card data directly; rely on PSP tokenization where possible.",
+        "Apply strong server-side validation and authorization for all checkout actions."
+      ],
+      "common_pitfalls": [
+        "Embedding provider-specific logic directly in SFRA controllers instead of using hooks.",
+        "Not handling partial failures gracefully (for example, payment success but order creation failure).",
+        "Ignoring regional compliance requirements such as SCA or local tax rules."
+      ],
+      "realworldexamples": [
+        "Retailer migrating from a legacy PSP to a new LINK cartridge with minimal checkout disruption.",
+        "Brand adding alternative payment methods (wallets, BNPL) via hook-based extensions.",
+        "Global site adapting checkout flows to support SCA in EU while keeping US flows simpler."
+      ],
+      "interview_questions": [
+        {
+          "question": "How would you design a checkout flow that supports multiple PSPs and remains upgrade-safe?",
+          "difficulty": "senior"
+        },
+        {
+          "question": "What strategies can you use to reduce latency during checkout while still calling external services?",
+          "difficulty": "mid"
+        },
+        {
+          "question": "How do you handle error recovery when payment authorization succeeds but order creation fails?",
+          "difficulty": "senior"
+        }
+      ]
+    },
+    {
+      "name": "Payment Gateway Integrations",
+      "core_concepts": [
+        "Payment integrations are often delivered as LINK cartridges or custom cartridges.",
+        "They must support authorization, capture, refunds, voids, and sometimes tokenization.",
+        "Security and PCI scope are major design drivers for payment integrations.",
+        "Payment flows must align with checkout UX and regional regulations such as SCA."
+      ],
+      "senior_explanation": "Payment gateway integrations in SFCC encapsulate communication with PSPs for authorization, capture, refunds, voids, and tokenization. LINK cartridges provide certified integrations that plug into SFRA hooks, while custom cartridges may be needed for bespoke providers or advanced flows. Senior engineers must design these integrations to minimize PCI scope, handle asynchronous flows (for example, 3DS, redirects), and support multiple payment methods across regions. They also need to ensure robust error handling, idempotency, and reconciliation with the PSP and downstream systems such as OMS or ERP.",
+      "architecture_patterns": [
+        "Use LINK cartridges where available to reduce custom code and leverage certified flows.",
+        "Abstract payment logic behind a service layer that SFRA controllers call via hooks.",
+        "Support multiple payment methods via a common interface with provider-specific implementations."
+      ],
+      "integration_patterns": [
+        "Tokenization flows where card data is captured by PSP-hosted fields and only tokens reach SFCC.",
+        "3DS or SCA flows involving redirects or challenge steps coordinated with the PSP.",
+        "Refund and capture operations initiated from OMS or Customer Service tools via APIs."
+      ],
+      "performance_considerations": [
+        "Avoid unnecessary round trips to PSPs; reuse tokens and configuration where possible.",
+        "Monitor PSP latency and implement timeouts and retries with backoff.",
+        "Design for graceful degradation if PSP is partially unavailable."
+      ],
+      "security_considerations": [
+        "Minimize PCI scope by avoiding direct handling of raw card data.",
+        "Use secure channels, strong authentication, and secret management for PSP credentials.",
+        "Validate PSP callbacks and webhooks to prevent spoofing."
+      ],
+      "common_pitfalls": [
+        "Hard-coding PSP logic into checkout controllers, making migrations difficult.",
+        "Not handling asynchronous or delayed payment notifications correctly.",
+        "Failing to reconcile payment states between SFCC, PSP, and OMS."
+      ],
+      "realworldexamples": [
+        "Retailer integrating multiple PSPs for different regions using a unified payment service layer.",
+        "Brand adopting tokenization to reduce PCI scope and simplify compliance.",
+        "Implementation adding BNPL providers via additional payment hooks and UI components."
+      ],
+      "interview_questions": [
+        {
+          "question": "How would you design a payment integration that minimizes PCI scope in SFCC?",
+          "difficulty": "senior"
+        },
+        {
+          "question": "What are the key considerations when integrating 3DS/SCA into SFRA checkout?",
+          "difficulty": "mid"
+        },
+        {
+          "question": "How do you ensure consistency between PSP transaction states and SFCC orders?",
+          "difficulty": "senior"
+        }
+      ]
+    },
+    {
+      "name": "OMS / ERP / PIM Integrations",
+      "core_concepts": [
+        "OMS, ERP, and PIM systems integrate with SFCC to manage orders, inventory, pricing, and product data.",
+        "Integrations are typically implemented via jobs, OCAPI/SCAPI, and dedicated cartridges.",
+        "Data flows are often asynchronous and rely on robust error handling and reconciliation.",
+        "Clear ownership of master data (for example, product, price, inventory) is critical."
+      ],
+      "senior_explanation": "Enterprise commerce implementations rely on OMS, ERP, and PIM systems to manage orders, inventory, pricing, and product data. SFCC integrates with these systems via jobs, OCAPI/SCAPI, and dedicated integration cartridges that encapsulate mapping, transformation, and error handling. Senior engineers must design data flows that respect system-of-record boundaries, handle asynchronous updates, and support partial failures without corrupting state. They also need to consider performance, idempotency, and monitoring, ensuring that catalog, price, and inventory updates propagate reliably while orders flow from SFCC to OMS/ERP for fulfillment and financial processing.",
+      "architecture_patterns": [
+        "Dedicated cartridges per integration domain (OMS, ERP, PIM) with clear responsibilities.",
+        "Job-driven batch imports and exports for catalogs, prices, and inventory.",
+        "Event-driven or near-real-time updates for critical data such as inventory or order status."
+      ],
+      "integration_patterns": [
+        "PIM to SFCC: product and attribute imports via OCAPI Data or SCAPI Admin.",
+        "OMS to SFCC: order status updates and cancellations via APIs or feeds.",
+        "ERP to SFCC: price book and tax table synchronization via scheduled jobs."
+      ],
+      "performance_considerations": [
+        "Schedule heavy jobs during off-peak windows to reduce storefront impact.",
+        "Use batch APIs and efficient payloads to minimize network overhead.",
+        "Monitor job runtimes and throughput to detect bottlenecks."
+      ],
+      "security_considerations": [
+        "Use least-privilege API clients for integrations and rotate credentials regularly.",
+        "Secure integration endpoints with network controls, TLS, and authentication.",
+        "Avoid exposing internal identifiers or sensitive data unnecessarily in integration payloads."
+      ],
+      "common_pitfalls": [
+        "Unclear ownership of master data leading to conflicting updates.",
+        "Tight coupling between SFCC and external systems via brittle mappings.",
+        "Lack of monitoring and reconciliation for failed or partial feeds."
+      ],
+      "realworldexamples": [
+        "Global retailer using PIM-driven catalog updates and OMS-driven order lifecycle management.",
+        "Brand synchronizing inventory snapshots from ERP to SFCC multiple times per day.",
+        "Implementation using SCAPI Admin for near-real-time inventory updates from OMS."
+      ],
+      "interview_questions": [
+        {
+          "question": "How would you design an order export and status update flow between SFCC and an OMS?",
+          "difficulty": "senior"
+        },
+        {
+          "question": "What are the trade-offs between batch and near-real-time integrations for inventory?",
+          "difficulty": "mid"
+        },
+        {
+          "question": "How do you ensure data consistency when multiple systems update overlapping entities?",
+          "difficulty": "senior"
+        }
+      ]
+    },
+    {
+      "name": "Inventory & Pricing Architecture",
+      "core_concepts": [
+        "Inventory and pricing are often mastered in external systems and synchronized into SFCC.",
+        "Price books and promotions determine effective prices per site, customer group, and currency.",
+        "Inventory can be managed as snapshots or via near-real-time updates from OMS/ERP.",
+        "Availability messaging on the storefront must align with fulfillment capabilities."
+      ],
+      "senior_explanation": "Inventory and pricing architecture in SFCC balances performance, accuracy, and integration complexity. Price books, customer groups, and promotions define effective prices, while inventory levels may be maintained as periodic snapshots or updated in near-real-time from OMS or ERP. Senior engineers must design data flows and caching strategies that keep storefront pricing and availability accurate enough for business needs without overloading APIs. They also need to consider multi-site and multi-locale scenarios, marketplace channels, and edge cases such as backorders, preorders, and store pickup.",
+      "architecture_patterns": [
+        "Centralized price books with site-specific overrides and promotions.",
+        "Inventory snapshots imported via jobs with optional real-time checks for critical flows.",
+        "Segmentation of price books by customer group (for example, B2B tiers, VIP customers)."
+      ],
+      "integration_patterns": [
+        "ERP-driven price book updates via OCAPI Data or SCAPI Admin.",
+        "OMS-driven inventory updates via batch feeds or APIs.",
+        "Real-time inventory checks for store pickup or limited-availability items."
+      ],
+      "performance_considerations": [
+        "Avoid real-time inventory checks on every page; reserve them for checkout or critical flows.",
+        "Use caching for price and inventory where business rules allow.",
+        "Optimize job schedules and payloads for large catalogs and multiple sites."
+      ],
+      "security_considerations": [
+        "Avoid exposing sensitive inventory thresholds that could be abused.",
+        "Secure integration endpoints and credentials for price and inventory feeds.",
+        "Ensure that price overrides and promotions are properly authorized and audited."
+      ],
+      "common_pitfalls": [
+        "Overusing real-time inventory checks, causing latency and instability.",
+        "Misconfigured price book hierarchies leading to incorrect prices on certain sites.",
+        "Inconsistent inventory rules between SFCC and OMS, causing overselling or underselling."
+      ],
+      "realworldexamples": [
+        "Retailer using nightly inventory snapshots with real-time checks only at checkout.",
+        "Brand managing regional price books with shared base prices and local promotions.",
+        "Implementation adding store pickup with real-time store-level inventory checks."
+      ],
+      "interview_questions": [
+        {
+          "question": "How would you design a pricing and inventory strategy for a multi-region SFCC implementation?",
+          "difficulty": "senior"
+        },
+        {
+          "question": "When is it appropriate to use real-time inventory checks versus snapshots?",
+          "difficulty": "mid"
+        },
+        {
+          "question": "How do you debug a pricing issue where a subset of customers sees incorrect prices?",
+          "difficulty": "mid"
+        }
+      ]
+    },
+    {
+      "name": "Jobs & Schedulers",
+      "core_concepts": [
+        "Jobs in SFCC execute scripts or pipelines on a schedule or on demand.",
+        "They are used for imports, exports, cleanup tasks, and integration flows.",
+        "Schedulers control when and how often jobs run, including dependencies and concurrency.",
+        "Job logs and notifications are critical for monitoring and troubleshooting."
+      ],
+      "senior_explanation": "Jobs and schedulers in SFCC provide the backbone for batch processing and integrations. They run scripts or pipelines to import and export data, synchronize with external systems, and perform maintenance tasks. Senior engineers must design job chains, schedules, and error handling that respect business SLAs and avoid impacting storefront performance. They also need to ensure idempotency, proper logging, and alerting so that failures are detected and recoverable. In complex environments, jobs often coordinate with external schedulers, message queues, or integration platforms.",
+      "architecture_patterns": [
+        "Job chains that orchestrate multi-step imports or exports with clear dependencies.",
+        "Environment-specific schedules tuned for traffic patterns and integration windows.",
+        "Use of job parameters and configuration objects to avoid hard-coded values."
+      ],
+      "integration_patterns": [
+        "Catalog, price, and inventory imports from PIM/ERP via jobs.",
+        "Order exports to OMS or ERP on a schedule or near-real-time basis.",
+        "Log and metrics exports to external monitoring or analytics platforms."
+      ],
+      "performance_considerations": [
+        "Schedule heavy jobs during off-peak hours to reduce contention with storefront traffic.",
+        "Tune batch sizes and parallelism to balance throughput and resource usage.",
+        "Monitor job runtimes and adjust schedules as data volumes grow."
+      ],
+      "security_considerations": [
+        "Restrict job execution permissions to appropriate roles.",
+        "Protect credentials and sensitive data used by jobs.",
+        "Ensure that job logs do not expose sensitive information."
+      ],
+      "common_pitfalls": [
+        "Running heavy jobs during peak traffic, causing performance degradation.",
+        "Lack of monitoring and alerting for job failures.",
+        "Non-idempotent jobs that corrupt data when retried."
+      ],
+      "realworldexamples": [
+        "Retailer orchestrating nightly catalog and price imports followed by cache invalidation jobs.",
+        "Brand exporting orders to OMS every few minutes with robust retry logic.",
+        "Implementation adding monitoring around critical jobs to reduce time-to-detect failures."
+      ],
+      "interview_questions": [
+        {
+          "question": "How would you design a job strategy for large catalog imports without impacting storefront performance?",
+          "difficulty": "senior"
+        },
+        {
+          "question": "What practices ensure that jobs are safe to retry after partial failures?",
+          "difficulty": "mid"
+        },
+        {
+          "question": "How do you monitor and troubleshoot failing jobs in a production SFCC environment?",
+          "difficulty": "mid"
+        }
+      ]
+    },
+    {
+      "name": "Caching Strategies",
+      "core_concepts": [
+        "SFCC supports multiple caching layers: application, CDN, browser, and custom caches.",
+        "Template-level caching reduces server rendering overhead for reusable fragments.",
+        "CDN caching at the edge improves global response times for static and cacheable dynamic content.",
+        "Custom caches in controllers enable efficient reuse of expensive lookups and computations."
+      ],
+      "senior_explanation": "Effective caching in SFCC requires understanding the interaction between application-level fragment caching, CDN edge caching, and browser caching to achieve target response times while maintaining content freshness. Template-level caching with appropriate TTLs reduces server load for reusable components like navigation and footers. CDN caching leverages geographic distribution for faster global delivery but must respect personalization and authentication boundaries. Custom caches for expensive operations like configuration lookups or rule evaluations can dramatically improve performance when properly invalidated. In headless scenarios, Commerce SDK caching reduces redundant SCAPI calls while maintaining consistency with platform state.",
+      "architecture_patterns": [
+        "Fragment caching for reusable components such as navigation, footers, or recommendation blocks.",
+        "Custom caches for expensive lookups (for example, configuration, rules) used across controllers.",
+        "Commerce SDK cache usage in BFFs to reduce SCAPI call volume."
+      ],
+      "integration_patterns": [
+        "SCAPI and OCAPI responses cached at BFF or gateway layers when safe.",
+        "External service responses (search, recommendations) cached application-side with fallbacks.",
+        "Jobs pre-warming caches for key pages before peak traffic."
+      ],
+      "performance_considerations": [
+        "Align cache keys with personalization dimensions to avoid collisions or under-utilization.",
+        "Keep cache entries within SFCC size limits to prevent evictions and warnings.",
+        "Monitor cache-hit ratios and origin load to continuously tune policies."
+      ],
+      "security_considerations": [
+        "Prevent caching of sensitive or user-specific data in shared caches via headers and cache scopes.",
+        "Avoid exposing session identifiers in cache keys or URLs.",
+        "Ensure edge logic does not bypass authentication or authorization checks."
+      ],
+      "common_pitfalls": [
+        "Caching personalized responses at shared layers, causing data leakage between users.",
+        "Ignoring locale and currency in cache keys, leading to incorrect content.",
+        "Under-using Commerce SDK caches in headless architectures, leading to unnecessary SCAPI load."
+      ],
+      "realworldexamples": [
+        "Commerce site achieving target response times by combining CDN and application caching.",
+        "Headless storefront reducing SCAPI latency using Redis-backed Commerce SDK caching.",
+        "Team refactoring custom caches to stay within SFCC limits and improve hit ratios."
+      ],
+      "interview_questions": [
+        {
+          "question": "Outline a multi-layer caching strategy for a highly personalized SFCC storefront.",
+          "difficulty": "senior"
+        },
+        {
+          "question": "How do you prevent sensitive data leakage through browser or CDN caches?",
+          "difficulty": "mid"
+        },
+        {
+          "question": "When would you introduce a custom cache, and how would you manage invalidation?",
+          "difficulty": "senior"
+        }
+      ]
+    },
+    {
+      "name": "Performance Optimization",
+      "core_concepts": [
+        "Performance depends on code efficiency, caching, integrations, and front-end behavior.",
+        "Salesforce provides response time targets and best practices for SFCC sites.",
+        "External services (search, recommendations, PSPs) can significantly impact latency.",
+        "Profiling and monitoring are essential to identify and fix bottlenecks."
+      ],
+      "senior_explanation": "Performance optimization in SFCC is a holistic effort spanning back-end code, integrations, caching, and front-end behavior. Senior engineers must design controllers and jobs to be efficient, minimize synchronous calls to external systems, and leverage caching appropriately. They also need to optimize front-end assets, reduce render-blocking resources, and ensure that personalization does not destroy cache effectiveness. Continuous monitoring of response times, error rates, and resource usage, combined with profiling in sandboxes, helps teams identify hotspots and validate improvements against Salesforce’s performance guidelines.",
+      "architecture_patterns": [
+        "Use of service layers and caching to shield controllers from slow integrations.",
+        "Segregation of heavy computations into jobs instead of real-time requests.",
+        "Adoption of performance budgets for pages and APIs."
+      ],
+      "integration_patterns": [
+        "Timeouts, retries, and circuit breakers around external service calls.",
+        "Fallback strategies when search or recommendation services are degraded.",
+        "Batching API calls where possible instead of many small sequential requests."
+      ],
+      "performance_considerations": [
+        "Minimize synchronous external calls in hot paths like PLP, PDP, and checkout.",
+        "Optimize ISML templates and avoid unnecessary loops or complex logic.",
+        "Use compression, minification, and HTTP/2 features for front-end assets."
+      ],
+      "security_considerations": [
+        "Ensure performance optimizations do not bypass security checks.",
+        "Avoid caching authenticated responses in shared caches.",
+        "Maintain secure configurations while tuning TLS and headers."
+      ],
+      "common_pitfalls": [
+        "Blaming SFCC platform performance without profiling custom code and integrations.",
+        "Over-personalizing content, making caching ineffective.",
+        "Ignoring mobile performance and focusing only on desktop metrics."
+      ],
+      "realworldexamples": [
+        "Retailer reducing PDP latency by caching configuration and optimizing external calls.",
+        "Brand improving mobile performance by reducing JS payloads and image sizes.",
+        "Implementation using profiling tools to refactor slow controllers and jobs."
+      ],
+      "interview_questions": [
+        {
+          "question": "How would you diagnose and improve performance on a slow PDP in SFRA?",
+          "difficulty": "senior"
+        },
+        {
+          "question": "What role do external services play in SFCC performance, and how do you mitigate their impact?",
+          "difficulty": "mid"
+        },
+        {
+          "question": "How do you balance personalization with caching to maintain performance?",
+          "difficulty": "senior"
+        }
+      ]
+    },
+    {
+      "name": "Security Best Practices",
+      "core_concepts": [
+        "Salesforce secures the platform, while customers must secure custom code, storefronts, and integrations.",
+        "Core best practices include 2FA, least privilege, defense in depth, and secure failure.",
+        "Developers must protect against XSS, CSRF, injection, and insecure direct object references.",
+        "Secure headers and HTTPS enforcement are key declarative defenses."
+      ],
+      "senior_explanation": "B2C Commerce security is a shared responsibility: Salesforce secures the platform and APIs, while customers must develop secure storefronts, integrations, and custom heads. Recommended practices include enforcing 2FA on privileged accounts, using least privilege for users and API clients, deploying HTTPS with secure cookies, and adopting a positive security model to whitelist allowed inputs. Developers must guard against XSS, CSRF, script injection, and insecure direct object references, relying on encoding, CSRF tokens, secure APIs, and robust access control checks for sensitive objects such as orders and payment instruments. In headless builds, SCAPI endpoints remain secured by Salesforce, but PWA, BFF, and hosting stacks must implement standard web application security and rate limiting.",
+      "architecture_patterns": [
+        "Centralized security cartridge enforcing HTTPS, headers, and shared middleware across sites.",
+        "API clients with scoped permissions for OCAPI/SCAPI, separated per integration domain.",
+        "BFF pattern enforcing server-side authorization before calling SCAPI."
+      ],
+      "integration_patterns": [
+        "Securely integrating identity providers via Account Manager SSO.",
+        "Using encrypted channels and secrets management when connecting to PSPs, OMS, and ERPs.",
+        "Implementing rate limiting and DoS protections at API gateways in front of SCAPI/OCAPI."
+      ],
+      "performance_considerations": [
+        "Tune security controls to minimize overhead without weakening protection.",
+        "Balance rate limits with throughput needs for SCAPI/OCAPI clients.",
+        "Apply caching carefully so security decisions are not bypassed by cached responses."
+      ],
+      "security_considerations": [
+        "Enforce HTTPS globally and configure secure cookies and modern TLS.",
+        "Apply CSRF protections and use secure variants of APIs that require tokens or additional parameters.",
+        "Encode all user-controlled outputs and validate inputs server-side."
+      ],
+      "common_pitfalls": [
+        "Relying on client-side checks instead of server-side authorization for sensitive operations.",
+        "Leaving OCAPI or SCAPI clients over-privileged and widely accessible.",
+        "Incorrectly caching authenticated responses at shared layers."
+      ],
+      "realworldexamples": [
+        "Implementations enabling Enforce HTTPS and secure headers to support modern browser security.",
+        "Storefronts migrating to secure API usages that require tokens for sensitive operations.",
+        "Headless deployments securing PWA and BFF services while Salesforce secures SCAPI."
+      ],
+      "interview_questions": [
+        {
+          "question": "How would you enforce least privilege across Business Manager users and API clients in a large SFCC org?",
+          "difficulty": "senior"
+        },
+        {
+          "question": "What measures would you implement to prevent XSS and CSRF in SFRA and headless storefronts?",
+          "difficulty": "mid"
+        },
+        {
+          "question": "How do security responsibilities differ between standard SFRA and a SCAPI-based headless architecture?",
+          "difficulty": "senior"
+        }
+      ]
+    }
+  ]
+}

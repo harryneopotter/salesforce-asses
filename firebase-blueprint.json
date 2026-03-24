@@ -1,0 +1,71 @@
+{
+  "entities": {
+    "AssessmentResult": {
+      "title": "AssessmentResult",
+      "description": "A completed assessment result containing the candidate's answers, AI reasoning, and final report.",
+      "type": "object",
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the assessment was completed"
+        },
+        "history": {
+          "type": "array",
+          "description": "The list of questions, answers, and evaluations",
+          "items": {
+            "type": "object",
+            "properties": {
+              "questionId": { "type": "string" },
+              "topicName": { "type": "string" },
+              "question": { "type": "string" },
+              "difficulty": { "type": "string" },
+              "userAnswer": { "type": "string" },
+              "score": { "type": "number" },
+              "reasoning": { "type": "string" }
+            }
+          }
+        },
+        "finalReport": {
+          "type": "object",
+          "description": "The final generated report",
+          "properties": {
+            "seniority": { "type": "string" },
+            "curriculumPath": { "type": "string" },
+            "strengths": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "weaknesses": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "nextSteps": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "skillMap": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "topic": { "type": "string" },
+                  "score": { "type": "number" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "required": ["timestamp", "history", "finalReport"]
+    }
+  },
+  "firestore": {
+    "assessments/{assessmentId}": {
+      "schema": {
+        "$ref": "#/entities/AssessmentResult"
+      },
+      "description": "Stores all completed assessments"
+    }
+  }
+}
