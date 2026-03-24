@@ -8,6 +8,7 @@ import { RadarChart } from './RadarChart';
 interface AssessmentResult {
   id: string;
   timestamp: string;
+  userName?: string;
   history: AnswerRecord[];
   finalReport: FinalReport;
 }
@@ -104,7 +105,7 @@ export default function AdminDashboard() {
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
-              <h1 className="font-semibold tracking-tight">Assessment Details</h1>
+              <h1 className="font-semibold tracking-tight">Assessment Details: {selectedAssessment.userName || 'Anonymous'}</h1>
             </div>
             <div className="text-sm text-zinc-500 font-mono">
               {new Date(selectedAssessment.timestamp).toLocaleString()}
@@ -252,6 +253,9 @@ export default function AdminDashboard() {
                   <div className="space-y-2">
                     <div className="flex items-center gap-3">
                       <span className="text-lg font-semibold text-white">
+                        {assessment.userName || 'Anonymous'}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 text-xs font-mono border border-blue-500/20">
                         {assessment.finalReport.seniority}
                       </span>
                       <span className="px-2 py-0.5 rounded-full bg-zinc-800 text-xs font-mono text-zinc-400">

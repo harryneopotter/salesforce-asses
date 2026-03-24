@@ -10,6 +10,10 @@
           "format": "date-time",
           "description": "When the assessment was completed"
         },
+        "userName": {
+          "type": "string",
+          "description": "The name of the candidate who took the assessment"
+        },
         "history": {
           "type": "array",
           "description": "The list of questions, answers, and evaluations",

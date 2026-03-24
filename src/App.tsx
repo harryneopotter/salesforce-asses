@@ -22,6 +22,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [isAdminView, setIsAdminView] = useState(false);
   const [logs, setLogs] = useState<{time: string, level: string, msg: string}[]>([]);
+  const [userName, setUserName] = useState('');
+  const [showNameModal, setShowNameModal] = useState(false);
 
   useEffect(() => {
     setQuestions(getAllQuestions());
@@ -135,6 +137,7 @@ export default function App() {
       try {
         await addDoc(collection(db, 'assessments'), {
           timestamp: new Date().toISOString(),
+          userName: userName || 'Anonymous',
           history: currentHistory,
           finalReport: report
         });
@@ -219,10 +222,10 @@ export default function App() {
         <header className="h-14 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border-subtle)] flex items-center justify-between px-6">
           <div className="font-mono text-sm text-[var(--color-text-secondary)]">
             {appState === 'INTRO' && 'SYS > READY'}
-            {appState === 'ASKING' && `SYS > RUNNING > TEST-${String(history.length + 1).padStart(3, '0')}`}
-            {appState === 'EVALUATING' && 'SYS > ANALYZING'}
-            {appState === 'GENERATING_REPORT' && 'SYS > COMPILING'}
-            {appState === 'RESULTS' && 'SYS > COMPLETE'}
+            {appState === 'ASKING' && `SYS > RUNNING > TEST-${String(history.length + 1).padStart(3, '0')}${userName ? ` [${userName}]` : ''}`}
+            {appState === 'EVALUATING' && `SYS > ANALYZING${userName ? ` [${userName}]` : ''}`}
+            {appState === 'GENERATING_REPORT' && `SYS > COMPILING${userName ? ` [${userName}]` : ''}`}
+            {appState === 'RESULTS' && `SYS > COMPLETE${userName ? ` [${userName}]` : ''}`}
           </div>
           <div className="flex items-center gap-4">
             <div className="text-[10px] font-mono text-[var(--color-text-muted)] tabular-nums">
@@ -265,12 +268,69 @@ export default function App() {
                   </div>
 
                   <button
-                    onClick={startAssessment}
+                    onClick={() => setShowNameModal(true)}
                     className="inline-flex items-center gap-2 px-6 py-3 bg-[var(--color-bg-secondary)] border border-[var(--color-accent-cyan)] text-[var(--color-accent-cyan)] font-mono text-sm hover:bg-[var(--color-accent-cyan)] hover:text-[#000] transition-colors rounded"
                   >
                     <Play className="w-4 h-4 fill-current" />
                     INITIALIZE SUITE
                   </button>
+
+                  {/* NAME MODAL */}
+                  <AnimatePresence>
+                    {showNameModal && (
+                      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.95 }}
+                          className="w-full max-w-md bg-[var(--color-bg-secondary)] border border-[var(--color-border-subtle)] rounded-lg shadow-2xl overflow-hidden"
+                        >
+                          <div className="px-6 py-4 border-b border-[var(--color-border-subtle)] bg-[var(--color-bg-tertiary)] flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-[12px] font-mono text-[var(--color-text-secondary)] uppercase tracking-widest">
+                              <Terminal className="w-4 h-4" />
+                              Candidate Identification
+                            </div>
+                            <button onClick={() => setShowNameModal(false)} className="text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] transition-colors">
+                              <Square className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <div className="p-6 space-y-4">
+                            <p className="text-sm text-[var(--color-text-secondary)]">
+                              Please enter your name to initialize the diagnostic suite. This will be recorded in the final evaluation report.
+                            </p>
+                            <input
+                              type="text"
+                              value={userName}
+                              onChange={(e) => setUserName(e.target.value)}
+                              placeholder="Enter your name..."
+                              className="w-full bg-[var(--color-bg-primary)] border border-[var(--color-border-default)] focus:border-[var(--color-accent-cyan)] focus:ring-1 focus:ring-[var(--color-accent-cyan)] outline-none rounded p-3 text-sm text-[var(--color-text-primary)] font-mono transition-all"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && userName.trim()) {
+                                  setShowNameModal(false);
+                                  startAssessment();
+                                }
+                              }}
+                            />
+                            <div className="flex justify-end pt-2">
+                              <button
+                                onClick={() => {
+                                  if (userName.trim()) {
+                                    setShowNameModal(false);
+                                    startAssessment();
+                                  }
+                                }}
+                                disabled={!userName.trim()}
+                                className="inline-flex items-center gap-2 px-6 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-accent-cyan)] text-[var(--color-accent-cyan)] font-mono text-sm hover:bg-[var(--color-accent-cyan)] hover:text-[#000] disabled:opacity-50 disabled:cursor-not-allowed transition-colors rounded"
+                              >
+                                PROCEED <ArrowRight className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        </motion.div>
+                      </div>
+                    )}
+                  </AnimatePresence>
                 </motion.div>
               )}
 
@@ -413,7 +473,7 @@ export default function App() {
                 >
                   <div className="bg-[var(--color-bg-secondary)] border border-[var(--color-border-subtle)] rounded-lg p-8 text-center">
                     <div className="text-[12px] font-mono text-[var(--color-text-secondary)] uppercase tracking-widest mb-4">
-                      TEST COMPLETE
+                      TEST COMPLETE {userName ? `FOR ${userName.toUpperCase()}` : ''}
                     </div>
                     <div className="text-[64px] font-bold text-[var(--color-accent-cyan)] leading-none mb-4 tabular-nums">
                       {finalReport.seniority}

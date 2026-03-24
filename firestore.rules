@@ -11,6 +11,7 @@ service cloud.firestore {
     // Document ID: auto-generated
     // Fields:
     //   - timestamp: string (ISO 8601 date string)
+    //   - userName: string (optional, max 100 chars)
     //   - history: list of objects (question, answer, reasoning, score, etc.)
     //   - finalReport: object (seniority, curriculumPath, strengths, weaknesses, nextSteps, skillMap)
     //
@@ -37,6 +38,7 @@ service cloud.firestore {
     function isValidAssessmentResult(data) {
       return data.keys().hasAll(['timestamp', 'history', 'finalReport']) &&
              isValidDateString(data.timestamp) &&
+             (!('userName' in data) || (data.userName is string && data.userName.size() <= 100)) &&
              data.history is list && data.history.size() <= 100 &&
              data.finalReport is map &&
              data.finalReport.keys().hasAll(['seniority', 'curriculumPath', 'strengths', 'weaknesses', 'nextSteps', 'skillMap']);

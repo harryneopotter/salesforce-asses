@@ -1,5 +1,5 @@
 {
-  "name": "",
-  "description": "",
+  "name": "SFCC Diagnostic Suite - Bluepanda",
+  "description": "An adaptive evaluation engine for Salesforce B2C Commerce developers.",
   "requestFramePermissions": []
 }
